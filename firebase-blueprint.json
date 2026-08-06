@@ -1,0 +1,44 @@
+{
+  "entities": {
+    "DocEquipment": {
+      "title": "DocEquipment",
+      "description": "Equipment items catalog with unit weights for load calculations",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "nome": { "type": "string" },
+        "peso": { "type": "number" },
+        "categoria": { "type": "string" }
+      },
+      "required": ["id", "nome", "peso"]
+    },
+    "DocProject": {
+      "title": "DocProject",
+      "description": "An event documentation containing load calculations, structural descriptions, and signatures",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "evento": { "type": "string" },
+        "dataEvento": { "type": "string" },
+        "pesoMaxPonto": { "type": "number" },
+        "ambientes": { "type": "array" },
+        "materiaisAncoragem": { "type": "string" },
+        "responsavel": { "type": "string" },
+        "crea": { "type": "string" },
+        "art": { "type": "string" },
+        "dataEmissao": { "type": "string" }
+      },
+      "required": ["id", "evento", "dataEvento", "pesoMaxPonto", "ambientes", "responsavel", "crea", "art"]
+    }
+  },
+  "firestore": {
+    "/frello_data/doc_catalog": {
+      "schema": "DocEquipment",
+      "description": "Catalog of registered equipments for weight estimations"
+    },
+    "/frello_data/doc_projects": {
+      "schema": "DocProject",
+      "description": "Load memorial emission reports"
+    }
+  }
+}

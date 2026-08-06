@@ -1,0 +1,10 @@
+{
+  "name": "Frello 2.0",
+  "description": "Sistema de Gerenciamento de Projetos",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
