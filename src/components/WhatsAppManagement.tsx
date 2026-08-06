@@ -133,7 +133,12 @@ export default function WhatsAppManagement() {
     setIsSaving(true);
     setSaveStatus('idle');
     try {
-      await saveToDatabase('whatsapp_api_config', config);
+      const configToSave = {
+        ...config,
+        enabled: config.apiUrl ? true : config.enabled
+      };
+      await saveToDatabase('whatsapp_api_config', configToSave);
+      setConfig(configToSave);
       setSaveStatus('success');
       setTimeout(() => setSaveStatus('idle'), 3000);
     } catch (err) {

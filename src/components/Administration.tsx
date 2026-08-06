@@ -2861,7 +2861,7 @@ export default function Administration({
 
       {/* Rodapé da página */}
       <footer className="pt-8 pb-4 text-center border-t border-neutral-200/80 mt-8 text-xs text-neutral-400 font-mono">
-        versão 0.0.1
+        versão 0.0.2
       </footer>
     </div>
   );

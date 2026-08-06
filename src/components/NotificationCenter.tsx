@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Freelancer, Notification, Task, UserProfile } from '../types';
-import { sendWhatsAppNotificationForNotif } from '../utils/whatsappUtils';
 import { 
   Bell, 
   Send, 
@@ -93,7 +92,6 @@ export default function NotificationCenter({
     };
 
     onAddNotification(newNotif);
-    sendWhatsAppNotificationForNotif(newNotif, freelancers);
 
     // Reset Form
     setNewTitle('');

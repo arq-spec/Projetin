@@ -3,26 +3,31 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/frello';
+const MONGODB_URI = process.env.MONGODB_URI;
 
 let isConnected = false;
 
 export async function connectToDatabase() {
   if (isConnected) {
-    console.log('[MongoDB] Using existing database connection');
+    return;
+  }
+
+  if (!MONGODB_URI) {
+    console.log('[MongoDB] MONGODB_URI not configured in environment variables. Using server storage.');
     return;
   }
 
   try {
     const db = await mongoose.connect(MONGODB_URI, {
-      autoIndex: true, // Auto-build indexes
+      autoIndex: true,
+      serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of hanging
     });
 
     isConnected = db.connections[0].readyState === 1;
     console.log('[MongoDB] Connection established successfully');
-  } catch (error) {
-    console.error('[MongoDB] Connection error:', error);
-    throw new Error('Failed to connect to MongoDB database.');
+  } catch (error: any) {
+    console.warn('[MongoDB] Connection error (falling back to server storage):', error?.message || error);
+    isConnected = false;
   }
 }
 
@@ -32,3 +37,4 @@ export async function disconnectFromDatabase() {
   isConnected = false;
   console.log('[MongoDB] Disconnected successfully');
 }
+

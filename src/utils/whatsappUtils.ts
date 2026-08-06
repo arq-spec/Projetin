@@ -13,19 +13,33 @@ export interface SendWhatsAppParams {
 export async function sendWhatsAppMessage({ phone, message }: SendWhatsAppParams): Promise<{ success: boolean; details?: string }> {
   try {
     const config = await loadFromDatabase('whatsapp_api_config');
-    if (!config || !config.enabled || !config.apiUrl) {
+    if (!config || (!config.enabled && !config.apiUrl) || !config.apiUrl || config.apiUrl === 'https://') {
       console.log('[WhatsApp] Integration is disabled or not configured in database.');
       return { success: false, details: 'WhatsApp não está ativado ou configurado nas configurações.' };
     }
 
-    const rawPhone = (phone || '').replace(/\D/g, '');
+    let rawPhone = (phone || '').replace(/\D/g, '');
     if (!rawPhone) {
       console.warn('[WhatsApp] No valid phone number provided.');
       return { success: false, details: 'Número de telefone inválido ou ausente.' };
     }
 
     // Ensure Brazilian numbers have 55 DDI if 10 or 11 digits
-    const cleanPhone = (rawPhone.length === 10 || rawPhone.length === 11) ? `55${rawPhone}` : rawPhone;
+    if (rawPhone.length === 10 || rawPhone.length === 11) {
+      rawPhone = `55${rawPhone}`;
+    }
+
+    // Generate phone variations (with and without 9th digit for Brazilian mobile numbers)
+    const phoneCandidates: string[] = [rawPhone];
+    if (rawPhone.startsWith('55') && rawPhone.length === 13 && rawPhone[4] === '9') {
+      const without9 = rawPhone.slice(0, 4) + rawPhone.slice(5);
+      if (!phoneCandidates.includes(without9)) phoneCandidates.push(without9);
+    } else if (rawPhone.startsWith('55') && rawPhone.length === 12) {
+      const with9 = rawPhone.slice(0, 4) + '9' + rawPhone.slice(4);
+      if (!phoneCandidates.includes(with9)) phoneCandidates.push(with9);
+    }
+
+    const cleanPhone = phoneCandidates[0];
 
     const rawUrl = config.apiUrl.trim();
     const token = config.token || '';

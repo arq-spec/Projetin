@@ -1081,7 +1081,7 @@ export default function App() {
   const triggerWhatsAppNotification = async (newNotif: Notification) => {
     try {
       const storedConfig = await loadFromDatabase('whatsapp_api_config');
-      if (!storedConfig || !storedConfig.enabled) {
+      if (!storedConfig || (!storedConfig.enabled && !storedConfig.apiUrl) || !storedConfig.apiUrl || storedConfig.apiUrl === 'https://') {
         console.log('[WhatsApp Notification] Integration is disabled or not configured.');
         return;
       }
@@ -1103,11 +1103,28 @@ export default function App() {
         recipientPhone = storedConfig.defaultPhone || '';
       }
 
-      const cleanPhone = recipientPhone.replace(/\D/g, '');
-      if (!cleanPhone) {
+      let rawPhoneDigits = recipientPhone.replace(/\D/g, '');
+      if (!rawPhoneDigits) {
         console.warn('[WhatsApp Notification] No phone number found for notification:', newNotif.id);
         return;
       }
+
+      // Ensure Brazilian numbers have 55 country code if 10 or 11 digits
+      if (rawPhoneDigits.length === 10 || rawPhoneDigits.length === 11) {
+        rawPhoneDigits = '55' + rawPhoneDigits;
+      }
+
+      // Generate phone variations (with and without 9th digit for Brazilian mobile numbers)
+      const phoneCandidates: string[] = [rawPhoneDigits];
+      if (rawPhoneDigits.startsWith('55') && rawPhoneDigits.length === 13 && rawPhoneDigits[4] === '9') {
+        const without9 = rawPhoneDigits.slice(0, 4) + rawPhoneDigits.slice(5);
+        if (!phoneCandidates.includes(without9)) phoneCandidates.push(without9);
+      } else if (rawPhoneDigits.startsWith('55') && rawPhoneDigits.length === 12) {
+        const with9 = rawPhoneDigits.slice(0, 4) + '9' + rawPhoneDigits.slice(4);
+        if (!phoneCandidates.includes(with9)) phoneCandidates.push(with9);
+      }
+
+      const cleanPhone = phoneCandidates[0];
 
       // Check if event type is active based on notification context
       let isEventEnabled = true;
@@ -1153,108 +1170,26 @@ export default function App() {
         }
         const finalInstance = instance || 'default';
 
-        // 🔵 TRY TEXT MESSAGE STRATEGIES FIRST (Most reliable & contains confirmation links)
-        attempts.push({
-          name: 'Evolution API v2 (Instância na URL - apikey)',
-          endpoint: `${cleanApiUrl}/message/sendText/${finalInstance}`,
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': storedConfig.token,
-            'apiKey': storedConfig.token,
-          },
-          body: {
-            number: cleanPhone,
-            text: textMessage,
-            options: { delay: 1000, presence: 'composing' }
-          }
-        });
-
-        attempts.push({
-          name: 'Evolution API v2 (Instância no Header & Body)',
-          endpoint: `${cleanApiUrl}/message/sendText`,
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': storedConfig.token,
-            'apiKey': storedConfig.token,
-            'instance': finalInstance,
-            'Instance': finalInstance,
-          },
-          body: {
-            number: cleanPhone,
-            text: textMessage,
-            instance: finalInstance,
-            options: { delay: 1000, presence: 'composing' }
-          }
-        });
-
-        attempts.push({
-          name: 'Evolution API v2 (URL Exata Digitada)',
-          endpoint: rawUrl,
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': storedConfig.token,
-            'apiKey': storedConfig.token,
-            'instance': finalInstance,
-            'Instance': finalInstance,
-          },
-          body: {
-            number: cleanPhone,
-            text: textMessage,
-            instance: finalInstance,
-            options: { delay: 1000, presence: 'composing' }
-          }
-        });
-
-        attempts.push({
-          name: 'Evolution API v2 (Rota Legada /message/send/{instance})',
-          endpoint: `${cleanApiUrl}/message/send/${finalInstance}`,
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': storedConfig.token,
-            'apiKey': storedConfig.token,
-          },
-          body: {
-            number: cleanPhone,
-            text: textMessage,
-            options: { delay: 1000, presence: 'composing' }
-          }
-        });
-
-        // 🟢 FALLBACK TO INTERACTIVE BUTTONS SECOND (If Confirmation Request)
-        if (newNotif.isConfirmacaoRequest && newNotif.projetoId && newNotif.alocacaoId) {
-          const origin = window.location.origin;
-          const buttonsPayload = {
-            number: cleanPhone,
-            title: newNotif.titulo,
-            description: newNotif.mensagem,
-            buttons: [
-              {
-                type: 'url',
-                displayText: '🟢 Confirmar Disponibilidade',
-                url: `${origin}/?action=confirm&projectId=${newNotif.projetoId}&allocationId=${newNotif.alocacaoId}`
-              },
-              {
-                type: 'url',
-                displayText: '🔴 Recusar / Declinar',
-                url: `${origin}/?action=decline&projectId=${newNotif.projetoId}&allocationId=${newNotif.alocacaoId}`
-              }
-            ]
-          };
-
+        for (const targetPhone of phoneCandidates) {
+          // 🔵 TRY TEXT MESSAGE STRATEGIES FIRST (Most reliable & contains confirmation links)
           attempts.push({
-            name: 'Evolution API (Botões Interativos - Instância na URL)',
-            endpoint: `${cleanApiUrl}/message/sendButtons/${finalInstance}`,
+            name: `Evolution API v2 (${targetPhone} - Instância na URL)`,
+            endpoint: `${cleanApiUrl}/message/sendText/${finalInstance}`,
             headers: {
               'Content-Type': 'application/json',
               'apikey': storedConfig.token,
               'apiKey': storedConfig.token,
             },
-            body: buttonsPayload
+            body: {
+              number: targetPhone,
+              text: textMessage,
+              options: { delay: 1000, presence: 'composing' }
+            }
           });
 
           attempts.push({
-            name: 'Evolution API (Botões Interativos - Instância no Body)',
-            endpoint: `${cleanApiUrl}/message/sendButtons`,
+            name: `Evolution API v2 (${targetPhone} - Header & Body)`,
+            endpoint: `${cleanApiUrl}/message/sendText`,
             headers: {
               'Content-Type': 'application/json',
               'apikey': storedConfig.token,
@@ -1263,10 +1198,94 @@ export default function App() {
               'Instance': finalInstance,
             },
             body: {
-              ...buttonsPayload,
-              instance: finalInstance
+              number: targetPhone,
+              text: textMessage,
+              instance: finalInstance,
+              options: { delay: 1000, presence: 'composing' }
             }
           });
+
+          attempts.push({
+            name: `Evolution API v2 (${targetPhone} - URL Digitada)`,
+            endpoint: rawUrl,
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': storedConfig.token,
+              'apiKey': storedConfig.token,
+              'instance': finalInstance,
+              'Instance': finalInstance,
+            },
+            body: {
+              number: targetPhone,
+              text: textMessage,
+              instance: finalInstance,
+              options: { delay: 1000, presence: 'composing' }
+            }
+          });
+
+          attempts.push({
+            name: `Evolution API v2 (${targetPhone} - Rota Legada /message/send/{instance})`,
+            endpoint: `${cleanApiUrl}/message/send/${finalInstance}`,
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': storedConfig.token,
+              'apiKey': storedConfig.token,
+            },
+            body: {
+              number: targetPhone,
+              text: textMessage,
+              options: { delay: 1000, presence: 'composing' }
+            }
+          });
+
+          // 🟢 FALLBACK TO INTERACTIVE BUTTONS SECOND (If Confirmation Request)
+          if (newNotif.isConfirmacaoRequest && newNotif.projetoId && newNotif.alocacaoId) {
+            const origin = window.location.origin;
+            const buttonsPayload = {
+              number: targetPhone,
+              title: newNotif.titulo,
+              description: newNotif.mensagem,
+              buttons: [
+                {
+                  type: 'url',
+                  displayText: '🟢 Confirmar Disponibilidade',
+                  url: `${origin}/?action=confirm&projectId=${newNotif.projetoId}&allocationId=${newNotif.alocacaoId}`
+                },
+                {
+                  type: 'url',
+                  displayText: '🔴 Recusar / Declinar',
+                  url: `${origin}/?action=decline&projectId=${newNotif.projetoId}&allocationId=${newNotif.alocacaoId}`
+                }
+              ]
+            };
+
+            attempts.push({
+              name: `Evolution API (${targetPhone} - Botões Interativos na URL)`,
+              endpoint: `${cleanApiUrl}/message/sendButtons/${finalInstance}`,
+              headers: {
+                'Content-Type': 'application/json',
+                'apikey': storedConfig.token,
+                'apiKey': storedConfig.token,
+              },
+              body: buttonsPayload
+            });
+
+            attempts.push({
+              name: `Evolution API (${targetPhone} - Botões Interativos no Body)`,
+              endpoint: `${cleanApiUrl}/message/sendButtons`,
+              headers: {
+                'Content-Type': 'application/json',
+                'apikey': storedConfig.token,
+                'apiKey': storedConfig.token,
+                'instance': finalInstance,
+                'Instance': finalInstance,
+              },
+              body: {
+                ...buttonsPayload,
+                instance: finalInstance
+              }
+            });
+          }
         }
       } else if (storedConfig.provider === 'zapi') {
         let zInstance = (storedConfig.instanceId || '').trim();
