@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { jsPDF } from 'jspdf';
+import { sendWhatsAppMessage } from '../utils/whatsappUtils';
 import { Task, Freelancer, ProjectAllocation, Client, Notification, PdfTheme, UserProfile, PerformanceReview } from '../types';
 import { 
   Briefcase, 
@@ -2550,10 +2551,20 @@ export default function ProjectManagement({
       let textMsg = `Olá, Requisitamos seu trabalho como ${alloc.funcao}, no evento ${currentProject.titulo}\n\nDATA: ${dataStr}`;
       textMsg += `\nLOCAL: ${localStr}\nValor do cachê (por diária): ${cacheStr}\n\nPor gentileza, poderia confirmar a disponibilidade do serviço o mais rápido possível?`;
       
-      // Simulate Email Sending
       const freelancer = freelancers.find(f => f.id === alloc.freelancerId);
       if (freelancer?.email) {
           console.log(`[SIMULAÇÃO] Email enviado para ${freelancer.email}:\n${textMsg}`);
+      }
+
+      // Send WhatsApp Notification to freelancer
+      const targetPhone = freelancer?.celular || freelancer?.telefone;
+      if (targetPhone) {
+        sendWhatsAppMessage({
+          phone: targetPhone,
+          message: textMsg
+        }).catch(err => {
+          console.warn('[WhatsApp] Erro ao enviar convite por WhatsApp:', err);
+        });
       }
 
       const newNotif: Notification = {

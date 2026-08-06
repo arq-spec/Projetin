@@ -1089,7 +1089,10 @@ export default function App() {
       // Determine which phone number to send to
       let recipientPhone = '';
       if (newNotif.freelancerId && newNotif.freelancerId !== 'all' && newNotif.freelancerId !== 'Todos') {
-        const freelancer = freelancers.find(f => f.id === newNotif.freelancerId);
+        const currentFreelancers = (lastDbValueRef.current?.freelancers && Array.isArray(lastDbValueRef.current.freelancers) && lastDbValueRef.current.freelancers.length > 0)
+          ? lastDbValueRef.current.freelancers
+          : freelancers;
+        const freelancer = currentFreelancers.find((f: any) => f.id === newNotif.freelancerId);
         if (freelancer) {
           recipientPhone = freelancer.celular || freelancer.telefone || '';
         }

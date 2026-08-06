@@ -1,13 +1,69 @@
 import express from "express";
 import path from "path";
+import mongoose from "mongoose";
+import { connectToDatabase } from "./src/mongodb-migration/db";
+import { KeyValueModel } from "./src/mongodb-migration/kv.schema";
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // In-memory server database cache fallback
+  const inMemoryDbStore: Record<string, any> = {};
+
+  // Try connecting to MongoDB asynchronously in the background
+  connectToDatabase().catch((err) => {
+    console.warn('[Server DB] MongoDB connection not active, using in-memory store:', err?.message || err);
+  });
+
   // Body parsers
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+  // API GET route to load persistent key-value data
+  app.get("/api/db/:key", async (req: express.Request, res: express.Response) => {
+    try {
+      const dbKey = String(req.params.key || '');
+      if (mongoose.connection.readyState === 1) {
+        const doc = await KeyValueModel.findOne({ key: dbKey });
+        if (doc && doc.data !== undefined) {
+          inMemoryDbStore[dbKey] = doc.data;
+          return res.json({ success: true, data: doc.data });
+        }
+      }
+      if (inMemoryDbStore[dbKey] !== undefined) {
+        return res.json({ success: true, data: inMemoryDbStore[dbKey] });
+      }
+      return res.json({ success: true, data: null });
+    } catch (error: any) {
+      const dbKey = String(req.params.key || '');
+      console.warn(`[Server DB] Error reading key ${dbKey}:`, error?.message);
+      const cached = inMemoryDbStore[dbKey];
+      return res.json({ success: true, data: cached !== undefined ? cached : null });
+    }
+  });
+
+  // API POST route to save persistent key-value data
+  app.post("/api/db/:key", async (req: express.Request, res: express.Response) => {
+    try {
+      const dbKey = String(req.params.key || '');
+      const { data } = req.body;
+
+      inMemoryDbStore[dbKey] = data;
+
+      if (mongoose.connection.readyState === 1) {
+        await KeyValueModel.findOneAndUpdate(
+          { key: dbKey },
+          { data, updatedAt: new Date() },
+          { upsert: true, new: true }
+        );
+      }
+      return res.json({ success: true });
+    } catch (error: any) {
+      console.warn(`[Server DB] Error saving key ${req.params.key}:`, error?.message);
+      return res.json({ success: true, cached: true });
+    }
+  });
 
   // API route for proxying WhatsApp requests (bypasses CORS and client constraints)
   app.post("/api/whatsapp/send", async (req: express.Request, res: express.Response) => {
