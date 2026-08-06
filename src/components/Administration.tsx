@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { jsPDF } from 'jspdf';
 import { Freelancer, Task, Client, ProfilePermissions, SystemUser, UserProfile, RegistrationRequest } from '../types';
 import PermissionsManagement from './PermissionsManagement';
@@ -130,6 +130,37 @@ export default function Administration({
   const [restoreMode, setRestoreMode] = useState<'merge' | 'overwrite'>('merge');
   const [restoreConfirmText, setRestoreConfirmText] = useState('');
   const [showRestoreModal, setShowRestoreModal] = useState(false);
+
+  // MongoDB Status State
+  const [dbStatus, setDbStatus] = useState<{ connected: boolean; status: string; mongodbConfigured: boolean; databaseName: string | null } | null>(null);
+  const [isCheckingDb, setIsCheckingDb] = useState(false);
+
+  const checkDbStatus = async () => {
+    setIsCheckingDb(true);
+    try {
+      const res = await fetch('/api/db-status');
+      if (res.ok) {
+        const data = await res.json();
+        setDbStatus({
+          connected: data.connected,
+          status: data.status || 'unknown',
+          mongodbConfigured: data.mongodbConfigured ?? false,
+          databaseName: data.databaseName || null
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to check DB status:', e);
+    } finally {
+      setIsCheckingDb(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeSubTab === 'dados') {
+      checkDbStatus();
+    }
+  }, [activeSubTab]);
+
 
   const getLocalStorageKey = (key: string): string => {
     if (key === 'freelancers') return 'freelance_management_freelancers_v2';
@@ -1662,7 +1693,49 @@ export default function Administration({
               </div>
             </div>
 
+            {/* Status da Conexão MongoDB no Servidor */}
+            <div className="bg-white border border-neutral-200 rounded-2xl p-4 shadow-3xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                  dbStatus?.connected ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-amber-50 text-amber-600 border border-amber-200'
+                }`}>
+                  <Database className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-xs font-bold text-neutral-900">Servidor MongoDB Privado</h4>
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      dbStatus?.connected 
+                        ? 'bg-emerald-100 text-emerald-800' 
+                        : 'bg-amber-100 text-amber-800'
+                    }`}>
+                      {dbStatus?.connected ? '🟢 Conectado & Sincronizado' : '🟡 Memória do Servidor (Reconectando...)'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-500 mt-0.5">
+                    {dbStatus?.connected ? (
+                      <>Banco de dados MongoDB ativo{dbStatus.databaseName ? ` (${dbStatus.databaseName})` : ''}. Persistência e sincronização em tempo real ativadas.</>
+                    ) : dbStatus?.mongodbConfigured ? (
+                      <>Variável de ambiente detectada (`MONGODB_URI` / `MONGO_URL`). Tentando estabelecer conexão com MongoDB...</>
+                    ) : (
+                      <>Para utilizar seu MongoDB privado, defina a variável `MONGODB_URI` no arquivo `.env` do seu servidor (ex: `MONGODB_URI=mongodb://usuario:senha@localhost:27017/frello`).</>
+                    )}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={checkDbStatus}
+                disabled={isCheckingDb}
+                className="shrink-0 px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 text-neutral-700 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isCheckingDb ? 'animate-spin text-purple-600' : ''}`} />
+                {isCheckingDb ? 'Verificando...' : 'Testar Conexão'}
+              </button>
+            </div>
+
             {/* Banco de dados - Estatísticas Atuais */}
+
             <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-4">
               <span className="text-[10px] uppercase font-bold text-neutral-500 tracking-wider block mb-3">Estatísticas do Banco de Dados</span>
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">

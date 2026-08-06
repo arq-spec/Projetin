@@ -1,4 +1,4 @@
-import { Schema, model, Document } from 'mongoose';
+import { Schema, model, models, Model, Document } from 'mongoose';
 
 export interface IKeyValueDoc extends Document {
   key: string;
@@ -12,8 +12,11 @@ const KeyValueSchema = new Schema<IKeyValueDoc>({
   updatedAt: { type: Date, default: Date.now }
 }, {
   timestamps: true,
+  strict: false,
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
 });
 
-export const KeyValueModel = model<IKeyValueDoc>('KeyValueStore', KeyValueSchema);
+export const KeyValueModel: Model<IKeyValueDoc> = (models.KeyValueStore as Model<IKeyValueDoc>) || model<IKeyValueDoc>('KeyValueStore', KeyValueSchema);
+
+

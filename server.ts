@@ -1,7 +1,7 @@
 import express from "express";
 import path from "path";
 import mongoose from "mongoose";
-import { connectToDatabase } from "./src/mongodb-migration/db";
+import { connectToDatabase, getMongoUri } from "./src/mongodb-migration/db";
 import { KeyValueModel } from "./src/mongodb-migration/kv.schema";
 
 async function startServer() {
@@ -20,23 +20,43 @@ async function startServer() {
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+  // API endpoint to inspect MongoDB connection status
+  app.get("/api/db-status", async (req: express.Request, res: express.Response) => {
+    try {
+      const isConnected = await connectToDatabase();
+      const state = mongoose.connection.readyState;
+      const states = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+      return res.json({
+        success: true,
+        connected: (state as number) === 1,
+        status: states[state] || 'unknown',
+        mongodbConfigured: Boolean(getMongoUri()),
+        databaseName: mongoose.connection.db ? mongoose.connection.db.databaseName : null
+      });
+    } catch (err: any) {
+      return res.json({ success: false, connected: false, error: err?.message || 'Error checking DB status' });
+    }
+  });
+
   // API GET route to load persistent key-value data
   app.get("/api/db/:key", async (req: express.Request, res: express.Response) => {
+    const dbKey = String(req.params.key || '');
     try {
-      const dbKey = String(req.params.key || '');
-      if (mongoose.connection.readyState === 1) {
-        const doc = await KeyValueModel.findOne({ key: dbKey });
-        if (doc && doc.data !== undefined) {
+      await connectToDatabase();
+      
+      if ((mongoose.connection.readyState as number) === 1) {
+        const doc = await KeyValueModel.findOne({ key: dbKey }).lean();
+        if (doc && doc.data !== undefined && doc.data !== null) {
           inMemoryDbStore[dbKey] = doc.data;
           return res.json({ success: true, data: doc.data });
         }
       }
+
       if (inMemoryDbStore[dbKey] !== undefined) {
         return res.json({ success: true, data: inMemoryDbStore[dbKey] });
       }
       return res.json({ success: true, data: null });
     } catch (error: any) {
-      const dbKey = String(req.params.key || '');
       console.warn(`[Server DB] Error reading key ${dbKey}:`, error?.message);
       const cached = inMemoryDbStore[dbKey];
       return res.json({ success: true, data: cached !== undefined ? cached : null });
@@ -45,25 +65,29 @@ async function startServer() {
 
   // API POST route to save persistent key-value data
   app.post("/api/db/:key", async (req: express.Request, res: express.Response) => {
-    try {
-      const dbKey = String(req.params.key || '');
-      const { data } = req.body;
+    const dbKey = String(req.params.key || '');
+    const { data } = req.body;
 
+    try {
       inMemoryDbStore[dbKey] = data;
 
-      if (mongoose.connection.readyState === 1) {
+      await connectToDatabase();
+
+      if ((mongoose.connection.readyState as number) === 1) {
         await KeyValueModel.findOneAndUpdate(
           { key: dbKey },
-          { data, updatedAt: new Date() },
-          { upsert: true, new: true }
+          { $set: { key: dbKey, data, updatedAt: new Date() } },
+          { upsert: true, new: true, setDefaultsOnInsert: true }
         );
       }
       return res.json({ success: true });
     } catch (error: any) {
-      console.warn(`[Server DB] Error saving key ${req.params.key}:`, error?.message);
+      console.warn(`[Server DB] Error saving key ${dbKey}:`, error?.message);
       return res.json({ success: true, cached: true });
     }
   });
+
+
 
   // API route for proxying WhatsApp requests (bypasses CORS and client constraints)
   app.post("/api/whatsapp/send", async (req: express.Request, res: express.Response) => {

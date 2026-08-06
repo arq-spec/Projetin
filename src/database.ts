@@ -22,6 +22,10 @@ export async function saveToDatabase(key: string, data: any) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ data })
+    }).then(res => {
+      if (!res.ok) {
+        console.warn(`[Database] Server returned non-ok status ${res.status} for ${key}`);
+      }
     }).catch(err => {
       console.warn(`[Database] Async server save failed for ${key}:`, err);
     });
@@ -62,22 +66,25 @@ export async function loadFromDatabase(key: string): Promise<any | null> {
 }
 
 export function subscribeToDatabase(key: string, callback: (data: any) => void) {
+  let lastKnownJson = '';
+
   const handleUpdate = (e: Event) => {
     const customEvent = e as CustomEvent;
+    lastKnownJson = JSON.stringify(customEvent.detail);
     callback(customEvent.detail);
   };
   
   window.addEventListener(`frello_update_${key}`, handleUpdate);
   
-  // Initial load
+  // Initial load from server or local
   loadFromDatabase(key).then(data => {
     if (data !== null) {
+      lastKnownJson = JSON.stringify(data);
       callback(data);
     }
   });
 
   // Periodically poll server database for remote changes from other browsers/devices
-  let lastKnownJson = '';
   const checkServerUpdates = async () => {
     try {
       const response = await fetch(`/api/db/${key}`, {
@@ -88,11 +95,11 @@ export function subscribeToDatabase(key: string, callback: (data: any) => void) 
         const result = await response.json();
         if (result && result.success && result.data !== null && result.data !== undefined) {
           const currentJson = JSON.stringify(result.data);
-          if (lastKnownJson && lastKnownJson !== currentJson) {
+          if (lastKnownJson !== currentJson) {
             localStorage.setItem(`frello_local_${key}`, JSON.stringify(result.data));
+            lastKnownJson = currentJson;
             callback(result.data);
           }
-          lastKnownJson = currentJson;
         }
       }
     } catch {}
@@ -111,4 +118,5 @@ export function subscribeToDatabase(key: string, callback: (data: any) => void) 
     clearInterval(intervalId);
   };
 }
+
 
